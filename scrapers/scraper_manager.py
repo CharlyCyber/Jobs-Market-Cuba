@@ -2,6 +2,7 @@ from typing import List, Dict
 import asyncio
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from scrapers.revolico_scraper import RevolicoScraper
+from scrapers.revolico_enhanced_scraper import RevolicoEnhancedScraper
 from scrapers.cubisima_scraper import CubisimaScraper
 from scrapers.cucoders_scraper import CucodersScraper
 from filters.job_filter import JobFilter
@@ -13,13 +14,17 @@ logger = setup_logger(__name__)
 class ScraperManager:
     
     def __init__(self):
+        # Usar scraper enhanced (httpx avanzado anti-detection) por defecto
+        # Es más rápido y no requiere Chrome instalado
+        revolico_scraper = RevolicoEnhancedScraper()
+        
         self.scrapers = [
-            RevolicoScraper(),
+            revolico_scraper,
             CubisimaScraper(),
             CucodersScraper()
         ]
         self.job_filter = JobFilter()
-        logger.info(f"Initialized ScraperManager with {len(self.scrapers)} scrapers")
+        logger.info(f"Initialized ScraperManager with {len(self.scrapers)} scrapers (Using Enhanced Anti-Detection)")
     
     async def scrape_all(self) -> List[Dict[str, str]]:
         logger.info("Starting parallel scraping from all sources")
