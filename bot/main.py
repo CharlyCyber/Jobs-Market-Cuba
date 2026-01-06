@@ -26,7 +26,7 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("start", self.handlers.start_command))
         self.application.add_handler(CommandHandler("help", self.handlers.help_command))
         
-        ofertas_filter = filters.TEXT & filters.Regex(r'(?i)^ofertas$')
+        ofertas_filter = filters.TEXT & filters.Regex(r'(?i)^\s*ofertas\s*$')
         self.application.add_handler(MessageHandler(ofertas_filter, self.handlers.ofertas_handler))
         
         self.application.add_handler(
