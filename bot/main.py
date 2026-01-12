@@ -23,16 +23,23 @@ class TelegramBot:
         logger.info("TelegramBot initialized successfully")
     
     def setup_handlers(self):
+        # Debug handler - log all text messages
+        self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handlers.debug_message))
+        
+        # Command handlers
         self.application.add_handler(CommandHandler("start", self.handlers.start_command))
         self.application.add_handler(CommandHandler("help", self.handlers.help_command))
         
-        ofertas_filter = filters.TEXT & filters.Regex(r'(?i)^ofertas$')
+        # Main search handler
+        ofertas_filter = filters.TEXT & filters.Regex(r'(?i)^\s*ofertas\s*$')
         self.application.add_handler(MessageHandler(ofertas_filter, self.handlers.ofertas_handler))
         
+        # Unknown command handler
         self.application.add_handler(
             MessageHandler(filters.COMMAND, self.handlers.unknown_command)
         )
         
+        # Error handler
         self.application.add_error_handler(self.handlers.error_handler)
         
         logger.info("All handlers registered successfully")

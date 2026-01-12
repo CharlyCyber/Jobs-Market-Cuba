@@ -14,6 +14,11 @@ class BotHandlers:
         self.scraper_manager = ScraperManager()
         self.formatter = HTMLFormatter()
     
+    async def debug_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Debug handler to log all text messages for troubleshooting"""
+        logger.info(f"DEBUG - Received message: '{update.message.text}' from user {update.effective_user.id} ({update.effective_user.username})")
+        logger.info(f"DEBUG - Chat ID: {update.effective_chat.id} | Is command? {update.message.text.startswith('/')}")
+    
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user = update.effective_user
         logger.info(f"User {user.id} ({user.username}) started the bot")
