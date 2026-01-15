@@ -20,7 +20,7 @@ class Config:
     
     REVOLICO_URL = os.getenv(
         "REVOLICO_URL",
-        "https://www.revolico.com/search?category=empleos&subcategory=ofertas-de-empleo"
+        "https://www.revolico.com/empleos"
     )
     CUBISIMA_MARKETING_URL = os.getenv(
         "CUBISIMA_MARKETING_URL",
