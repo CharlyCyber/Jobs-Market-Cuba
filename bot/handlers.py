@@ -86,8 +86,36 @@ Busca ofertas de trabajo en múltiples plataformas cubanas y las filtra según t
             
             result_html = self.formatter.format_job_offers(offers)
             
+            # Agregar métricas al final (si están disponibles)
+            metrics_summary = ""
+            try:
+                from scrapers.metrics import ScrapingMetrics
+                # Obtener métricas de todos los scrapers
+                total_metrics = ScrapingMetrics()
+                for scraper in self.scraper_manager.scrapers:
+                    if hasattr(scraper, 'metrics'):
+                        # Merge métricas
+                        total_metrics.total_requests += scraper.metrics.total_requests
+                        total_metrics.successful_requests += scraper.metrics.successful_requests
+                        total_metrics.failed_requests += scraper.metrics.failed_requests
+                        total_metrics.cached_requests += scraper.metrics.cached_requests
+                        total_metrics.retry_requests += scraper.metrics.retry_requests
+                        total_metrics.proxy_failures += scraper.metrics.proxy_failures
+                
+                if total_metrics.total_requests > 0:
+                    # Agregar summary pequeño al final del resultado
+                    metrics_summary = f"\n\n📊 <b>Estadísticas:</b>\n"
+                    metrics_summary += f"✅ Requests exitosas: {total_metrics.successful_requests}\n"
+                    metrics_summary += f"❌ Requests fallidas: {total_metrics.failed_requests}\n"
+                    metrics_summary += f"💾 Cache hits: {total_metrics.cached_requests}\n"
+                    metrics_summary += f"🔄 Reintentos: {total_metrics.retry_requests}\n"
+                    metrics_summary += f"🌐 Fallos de proxy: {total_metrics.proxy_failures}\n"
+                    metrics_summary += f"📈 Tasa de éxito: {total_metrics.get_success_rate():.1f}%"
+            except:
+                pass
+            
             await searching_msg.edit_text(
-                result_html,
+                result_html + metrics_summary,
                 parse_mode=ParseMode.HTML,
                 disable_web_page_preview=True
             )

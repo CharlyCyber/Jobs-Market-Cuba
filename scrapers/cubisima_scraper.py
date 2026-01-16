@@ -10,7 +10,7 @@ logger = setup_logger(__name__)
 class CubisimaScraper(BaseScraper):
     
     def __init__(self):
-        super().__init__("Cubisima")
+        super().__init__("Cubisima", use_cache=True, use_proxy=True)
         self.urls = [
             Config.CUBISIMA_MARKETING_URL,
             Config.CUBISIMA_DESIGN_URL,

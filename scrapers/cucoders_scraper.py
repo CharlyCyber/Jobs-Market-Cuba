@@ -10,7 +10,7 @@ logger = setup_logger(__name__)
 class CucodersScraper(BaseScraper):
     
     def __init__(self):
-        super().__init__("CuCoders")
+        super().__init__("CuCoders", use_cache=True, use_proxy=True)
         self.url = Config.CUCODERS_URL
     
     def scrape(self) -> List[Dict[str, str]]:

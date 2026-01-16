@@ -9,170 +9,147 @@ from bot.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
-# Try to import Selenium, but make it optional
+# Importar undetected-chromedriver (mejor que Selenium normal)
 try:
-    from selenium import webdriver
+    import undetected_chromedriver as uc
     from selenium.webdriver.chrome.options import Options
     from selenium.webdriver.common.by import By
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
     from selenium.common.exceptions import TimeoutException, NoSuchElementException
-    from selenium.webdriver.common.action_chains import ActionChains
-    SELENIUM_AVAILABLE = True
-except ImportError:
-    SELENIUM_AVAILABLE = False
-    logger.warning("Selenium not available - will use only HTTP requests")
+    from selenium_stealth import stealth
+    UNDETECTED_CHROMEDRIVER_AVAILABLE = True
+    logger.info("✓ Undetected ChromeDriver disponible")
+except ImportError as e:
+    UNDETECTED_CHROMEDRIVER_AVAILABLE = False
+    logger.warning(f"✗ Undetected ChromeDriver no disponible: {e}")
 
 
 class RevolicoScraper(BaseScraper):
     
     def __init__(self):
-        super().__init__("Revolico")
+        super().__init__("Revolico", use_cache=True, use_proxy=True)
         self.url = Config.REVOLICO_URL
         self.driver = None
     
-    def _setup_selenium(self):
-        """Setup Selenium WebDriver with advanced anti-detection measures"""
-        if not SELENIUM_AVAILABLE:
+    def _setup_undetected_chrome(self):
+        """Setup Undetected ChromeDriver con configuración anti-detección"""
+        if not UNDETECTED_CHROMEDRIVER_AVAILABLE:
             return False
-            
-        chrome_options = Options()
-        
-        # Advanced anti-detection options
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
-        chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-        chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-        chrome_options.add_experimental_option('useAutomationExtension', False)
-        chrome_options.add_argument("--disable-web-security")
-        chrome_options.add_argument("--disable-features=VizDisplayCompositor")
-        
-        # Random user agents
-        user_agents = [
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2.1 Safari/605.1.15"
-        ]
-        
-        chrome_options.add_argument(f"--user-agent={random.choice(user_agents)}")
-        
-        # Additional stealth options
-        chrome_options.add_argument("--disable-extensions")
-        chrome_options.add_argument("--disable-plugins")
-        chrome_options.add_argument("--disable-images")
-        chrome_options.add_argument("--disable-javascript")  # Sometimes helps
-        chrome_options.add_argument("--disable-css")
-        chrome_options.add_argument("--disable-software-rasterizer")
-        chrome_options.add_argument("--disable-gpu")
-        chrome_options.add_argument("--window-size=1920,1080")
         
         try:
-            self.driver = webdriver.Chrome(options=chrome_options)
+            options = uc.ChromeOptions()
             
-            # Execute stealth scripts
-            self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-            self.driver.execute_script("Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]})")
-            self.driver.execute_script("Object.defineProperty(navigator, 'languages', {get: () => ['es-ES', 'es', 'en-US', 'en']})")
+            # Configuración básica
+            options.add_argument('--headless=new')  # Nuevo headless más indetectable
+            options.add_argument('--no-sandbox')
+            options.add_argument('--disable-dev-shm-usage')
+            options.add_argument('--disable-blink-features=AutomationControlled')
+            options.add_argument('--disable-web-security')
+            options.add_argument('--window-size=1920,1080')
+            options.add_argument('--disable-gpu')
             
-            logger.info("Selenium WebDriver initialized successfully with stealth mode")
+            # Configurar proxy si está disponible
+            if self.use_proxy and self.proxy_rotator:
+                proxy = self.proxy_rotator.get_next_proxy()
+                if proxy:
+                    options.add_argument(f'--proxy-server={proxy.get("http", "")}')
+                    logger.info(f"🌐 Usando proxy en Chrome: {proxy.get('http', '')[:30]}...")
+            
+            # Inicializar undetected-chromedriver
+            self.driver = uc.Chrome(options=options, version_main=120)
+            
+            # Aplicar selenium-stealth para ocultar más rastros
+            stealth(self.driver,
+                languages=["es-ES", "es", "en-US", "en"],
+                vendor="Google Inc.",
+                platform="Win32",
+                webgl_vendor="Intel Inc.",
+                renderer="Intel Iris OpenGL Engine",
+                fix_hairline=True,
+                webdriver=False  # Importante: esconder webdriver
+            )
+            
+            logger.info("✅ Undetected ChromeDriver inicializado exitosamente con stealth")
             return True
+            
         except Exception as e:
-            logger.error(f"Failed to initialize Selenium WebDriver: {str(e)}")
+            logger.error(f"❌ Error inicializando Undetected ChromeDriver: {str(e)}")
             return False
     
     def scrape(self) -> List[Dict[str, str]]:
-        logger.info(f"Starting scraping from {self.source_name}")
+        logger.info(f"🚀 Iniciando scraping de {self.source_name}")
         
-        # Try Selenium first for better success rate with anti-bot protection
-        if Config.USE_SELENIUM and SELENIUM_AVAILABLE:
+        # ESTRATEGIA 1: Intentar con undetected-chromedriver (MÁS EFECTIVO)
+        if UNDETECTED_CHROMEDRIVER_AVAILABLE and Config.USE_SELENIUM:
             try:
-                if self._setup_selenium():
-                    offers = self._scrape_with_selenium()
+                logger.info("📱 Intentando con Undetected ChromeDriver...")
+                if self._setup_undetected_chrome():
+                    offers = self._scrape_with_undetected()
                     self._cleanup_selenium()
-                    if offers:
-                        logger.info(f"Successfully scraped {len(offers)} offers from {self.source_name} using Selenium")
+                    
+                    if offers and len(offers) > 0:
+                        logger.info(f"✅ EXITOSO: {len(offers)} ofertas obtenidas con Undetected ChromeDriver")
                         return offers
+                    else:
+                        logger.warning("⚠️ Undetected ChromeDriver no obtuvo resultados, probando método HTTP...")
             except Exception as e:
-                logger.error(f"Selenium scraping failed for {self.source_name}: {str(e)}")
+                logger.error(f"❌ Error con Undetected ChromeDriver: {str(e)[:150]}")
                 if self.driver:
                     self._cleanup_selenium()
+        
+        # ESTRATEGIA 2: Fallback a método HTTP mejorado con retry
+        try:
+            logger.info("🌐 Probando método HTTP con proxies y retry...")
+            offers = self._scrape_with_http()
+            
+            if offers and len(offers) > 0:
+                logger.info(f"✅ EXITOSO: {len(offers)} ofertas obtenidas con método HTTP")
+                return offers
+            else:
+                logger.warning("⚠️ Método HTTP no obtuvo resultados")
+        except Exception as e:
+            logger.error(f"❌ Error con método HTTP: {str(e)[:150]}")
+        
+        # Último intento: método básico sin mejoras
+        try:
+            logger.info("🔄 Último intento con método básico...")
+            offers = self._scrape_basic()
+            
+            if offers:
+                logger.info(f"✅ EXITOSO: {len(offers)} ofertas obtenidas con método básico")
+                return offers
+        except Exception as e:
+            logger.error(f"❌ Error en método básico: {str(e)[:100]}")
+        
+        logger.error(f"❌ FALLO TOTAL: No se pudieron obtener ofertas de {self.source_name}")
+        return []
         
         # Try multiple URL strategies
         urls_to_try = [
             "https://www.revolico.com/empleos",
-            "https://www.revolico.com/ofertas-de-empleo",
-            "https://www.revolico.com/trabajo",
-            "https://www.revolico.com/empleos/ofertas-de-empleo",
+            "https://www.revolico.com/empleos",
         ]
         
+        # Probar cada URL con método mejorado
         for url in urls_to_try:
-            logger.info(f"Trying URL: {url}")
+            logger.info(f"🔗 Probando URL: {url}")
             
-            # Try with different request patterns
-            offers = self._scrape_with_advanced_requests(url)
-            if offers:
-                logger.info(f"Successfully scraped {len(offers)} offers from {url}")
-                return offers
-        
-        logger.error("All scraping methods failed for Revolico")
-        return []
-    
-    def _scrape_with_selenium(self) -> List[Dict[str, str]]:
-        """Scrape using Selenium WebDriver with advanced techniques"""
-        try:
-            logger.info(f"Loading page with Selenium: {self.url}")
-            
-            # First, visit a general page to establish session
-            self.driver.get("https://www.revolico.com")
-            time.sleep(random.uniform(3, 5))
-            
-            # Then navigate to the jobs page
-            self.driver.get(self.url)
-            
-            # Wait for dynamic content
-            WebDriverWait(self.driver, 15).until(
-                EC.presence_of_element_located((By.TAG_NAME, "body"))
-            )
-            
-            # Random scrolling to mimic human behavior
-            for i in range(3):
-                self.driver.execute_script(f"window.scrollTo(0, {(i+1) * document.body.scrollHeight / 4});")
-                time.sleep(random.uniform(1, 2))
-            
-            # Get page source and parse
-            page_source = self.driver.page_source
-            soup = BeautifulSoup(page_source, 'html.parser')
-            
-            return self._parse_offers(soup)
-            
-        except Exception as e:
-            logger.error(f"Error in Selenium scraping: {str(e)}")
-            return []
-    
-    def _scrape_with_advanced_requests(self, url: str) -> List[Dict[str, str]]:
-        """Scrape using advanced HTTP request techniques"""
-        
-        # Different request strategies to avoid detection
-        strategies = [
-            self._strategy_basic,
-            self._strategy_with_referer,
-            self._strategy_with_cookies,
-            self._strategy_slow_requests
-        ]
-        
-        for strategy in strategies:
             try:
-                logger.debug(f"Trying strategy: {strategy.__name__}")
-                response = strategy(url)
+                response = self._make_request(url)
+                
                 if response and response.status_code == 200:
-                    soup = BeautifulSoup(response.content, 'html.parser')
+                    soup = BeautifulSoup(response.text, 'html.parser')
                     offers = self._parse_offers(soup)
+                    
                     if offers:
                         return offers
-                time.sleep(random.uniform(2, 4))  # Delay between strategies
+                
+                # Esperar entre intentos
+                time.sleep(random.uniform(3, 6))
+                
             except Exception as e:
-                logger.debug(f"Strategy {strategy.__name__} failed: {str(e)}")
+                logger.debug(f"Error con URL {url}: {str(e)[:80]}")
                 continue
         
         return []

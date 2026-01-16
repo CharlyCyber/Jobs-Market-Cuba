@@ -9,18 +9,39 @@ import hashlib
 import base64
 from bot.config import Config
 from bot.utils.logger import setup_logger
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from scrapers.proxy_rotator import ProxyRotator
+from scrapers.cache import CacheManager
+from scrapers.metrics import ScrapingMetrics
 
 logger = setup_logger(__name__)
 
 
 class BaseScraper(ABC):
     
-    def __init__(self, source_name: str):
+    def __init__(self, source_name: str, use_cache: bool = True, use_proxy: bool = True):
         self.source_name = source_name
         self.ua = UserAgent()
         self.session = self._create_session()
         self.request_count = 0
         self.session_id = hashlib.md5(f"{source_name}_{time.time()}".encode()).hexdigest()[:8]
+        
+        # Nuevos componentes: proxy rotator, cache y métricas
+        self.use_cache = use_cache
+        self.use_proxy = use_proxy
+        
+        if use_proxy:
+            self.proxy_rotator = ProxyRotator()
+        else:
+            self.proxy_rotator = None
+        
+        if use_cache:
+            self.cache = CacheManager()
+        else:
+            self.cache = None
+        
+        self.metrics = ScrapingMetrics()
+        
         logger.info(f"Initialized {source_name} scraper with session ID: {self.session_id}")
     
     def _create_session(self) -> requests.Session:
@@ -46,8 +67,8 @@ class BaseScraper(ABC):
         # Fix encoding issues - don't force identity encoding
         # Let requests handle encoding automatically
         
-        # Add random delays between requests
-        session.delay_range = (2, 5)
+        # Add random delays between requests (AUMENTADO para más seguridad)
+        session.delay_range = (5, 10)  # Aumentado de (2, 5) a (5, 10)
         
         return session
     
@@ -88,89 +109,134 @@ class BaseScraper(ABC):
             'sec-ch-ua-platform': f'"{platform}"',
         }
     
-    def _make_request(self, url: str, retries: int = None) -> Optional[requests.Response]:
-        if retries is None:
-            retries = Config.MAX_RETRIES
+    def _make_request(self, url: str) -> Optional[requests.Response]:
+        """Método mejorado de request con cache, proxy y retry automático"""
         
         self.request_count += 1
-        logger.debug(f"Request #{self.request_count} to {url} (attempt 1/{retries})")
+        start_time = time.time()
         
-        # Add random delay between requests to mimic human behavior
-        if self.request_count > 1:
-            delay = random.uniform(*self.session.delay_range)
-            logger.debug(f"Waiting {delay:.2f}s before request...")
-            time.sleep(delay)
+        # CHECK 1: Verificar cache primero
+        if self.cache:
+            cached_data = self.cache.get(url)
+            if cached_data:
+                # Retornar un objeto Response simulado con datos cacheados
+                self.metrics.record_cache_hit()
+                logger.info(f"✓ Cache HIT para {url[:60]}...")
+                
+                # Crear response simulado
+                class CachedResponse:
+                    def __init__(self, content):
+                        self.content = content
+                        self.status_code = 200
+                        self.text = content.decode('utf-8', errors='ignore')
+                        self.encoding = 'utf-8'
+                
+                return CachedResponse(cached_data.get('content', b''))
         
-        for attempt in range(retries):
-            try:
-                logger.debug(f"Attempting request to {url} (attempt {attempt + 1}/{retries})")
-                
-                headers = self._get_headers()
-                
-                # Add session-specific headers
-                headers.update({
-                    'X-Requested-With': 'XMLHttpRequest',  # Common AJAX header
-                    'X-Session-ID': self.session_id,
-                })
-                
-                # For Revolico, add extra headers to avoid detection
-                if 'revolico.com' in url.lower():
-                    headers.update({
-                        'Referer': 'https://www.google.com/',
-                        'Origin': 'https://www.revolico.com',
-                    })
-                
-                response = self.session.get(
-                    url,
-                    headers=headers,
-                    timeout=Config.REQUEST_TIMEOUT,
-                    allow_redirects=True,
-                    stream=False  # Get full response immediately
-                )
-                
-                if response.status_code == 200:
-                    # Fix encoding issues
-                    try:
-                        response.encoding = 'utf-8'
-                        # Ensure the content is properly decoded
-                        if response.content:
-                            response.text
-                    except UnicodeDecodeError:
-                        logger.warning(f"Encoding issues with {url}, trying different encoding")
-                        response.encoding = 'iso-8859-1'
-                    
-                    logger.info(f"Successfully fetched {url}")
-                    return response
-                elif response.status_code == 403:
-                    logger.warning(f"Access forbidden (403) for {url}")
-                    if attempt < retries - 1:
-                        # Wait longer for 403 errors
-                        time.sleep(Config.REQUEST_DELAY * (attempt + 2))
-                elif response.status_code == 429:
-                    logger.warning(f"Rate limited (429) for {url}")
-                    if attempt < retries - 1:
-                        # Wait much longer for rate limits
-                        time.sleep(Config.REQUEST_DELAY * (attempt + 5))
-                elif response.status_code == 404:
-                    logger.warning(f"Page not found (404) for {url}")
-                    break  # Don't retry 404 errors
-                else:
-                    logger.warning(f"Received status code {response.status_code} for {url}")
-                    if attempt < retries - 1:
-                        time.sleep(Config.REQUEST_DELAY * (attempt + 1))
-                
-            except requests.exceptions.Timeout:
-                logger.error(f"Timeout while fetching {url}")
-            except requests.exceptions.RequestException as e:
-                logger.error(f"Request error for {url}: {str(e)}")
+        # CHECK 2: Verificar si usamos proxy
+        proxy = None
+        if self.use_proxy and self.proxy_rotator:
+            proxy = self.proxy_rotator.get_next_proxy()
+        
+        logger.info(f"🌐 Request #{self.request_count} a {url[:60]}...")
+        if proxy:
+            logger.debug(f"   Proxy: {proxy.get('http', 'sin proxy')[:30]}...")
+        
+        # Retry con Tenacity (exponential backoff)
+        @retry(
+            stop=stop_after_attempt(Config.MAX_RETRIES),
+            wait=wait_exponential(multiplier=1, min=5, max=30),
+            retry=retry_if_exception_type((requests.Timeout, requests.ConnectionError)),
+            before_sleep=lambda retry_state: logger.info(f"🔄 Reintento #{retry_state.attempt_number} esperando {retry_state.next_action:.1f}s...")
+        )
+        def _do_request():
+            # Obtener proxy actual
+            current_proxy = None
+            if self.use_proxy and self.proxy_rotator:
+                current_proxy = self.proxy_rotator.get_next_proxy()
             
-            if attempt < retries - 1:
-                delay = Config.REQUEST_DELAY + random.uniform(0, 2)
-                logger.debug(f"Waiting {delay:.2f}s before retry...")
-                time.sleep(delay)
+            # Headers mejorados
+            headers = self._get_headers()
+            
+            # Headers adicionales
+            headers.update({
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-Session-ID': self.session_id,
+            })
+            
+            # Headers específicos para Revolico
+            if 'revolico.com' in url.lower():
+                headers.update({
+                    'Referer': 'https://www.google.com/',
+                    'Origin': 'https://www.revolico.com',
+                })
+            
+            # Hacer request
+            response = self.session.get(
+                url,
+                headers=headers,
+                proxies=current_proxy,
+                timeout=Config.REQUEST_TIMEOUT,
+                allow_redirects=True,
+                stream=False
+            )
+            
+            # Validar respuesta
+            if response.status_code == 200:
+                # Guardar en cache
+                if self.cache and response.content:
+                    try:
+                        self.cache.set(url, {'content': response.content.hex()})
+                        logger.debug(f"✓ Cache guardado para {url[:50]}...")
+                    except:
+                        pass
+                
+                # Marcar proxy como exitoso
+                if current_proxy and self.use_proxy:
+                    proxy_url = current_proxy.get('http', '')
+                    self.proxy_rotator.mark_success(proxy_url)
+                
+                return response
+            
+            elif response.status_code in [403, 429]:
+                # Marcar proxy como fallido
+                if current_proxy and self.use_proxy:
+                    proxy_url = current_proxy.get('http', '')
+                    self.proxy_rotator.mark_failed(proxy_url)
+                    self.metrics.record_proxy_failure()
+                
+                # Lanzar excepción para que tenacity reintente
+                error_msg = f"Error {response.status_code} - {url}"
+                if response.status_code == 403:
+                    logger.warning(f"🚫 ACCESO DENEGADO (403)")
+                else:
+                    logger.warning(f"🚫 RATE LIMIT (429)")
+                
+                raise requests.exceptions.HTTPError(error_msg)
+            
+            elif response.status_code == 404:
+                logger.warning(f"❌ PÁGINA NO ENCONTRADA (404) - {url}")
+                raise requests.exceptions.HTTPError("Page not found")
+            
+            else:
+                logger.warning(f"⚠️ Status code: {response.status_code} - {url}")
+                raise requests.exceptions.HTTPError(f"Unexpected status: {response.status_code}")
         
-        logger.error(f"Failed to fetch {url} after {retries} attempts")
-        return None
+        try:
+            response = _do_request()
+            
+            # Registrar métricas de éxito
+            elapsed_time = time.time() - start_time
+            self.metrics.record_success(elapsed_time)
+            
+            logger.info(f"✅ ÉXITO - {url[:50]}... ({elapsed_time:.2f}s)")
+            return response
+            
+        except Exception as e:
+            # Registrar métricas de fallo
+            self.metrics.record_failure(str(e)[:100])
+            logger.error(f"❌ FALLO - {url[:50]}... | {str(e)[:100]}")
+            return None
     
     @abstractmethod
     def scrape(self) -> List[Dict[str, str]]:

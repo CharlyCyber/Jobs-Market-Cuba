@@ -53,3 +53,10 @@ htmlcov/
 chromedriver
 geckodriver
 *.crx
+
+# Cache
+cache/
+*.json
+
+# Proxies
+proxies_list.txt

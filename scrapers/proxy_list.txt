@@ -1,0 +1,32 @@
+# Lista de proxies gratuitos para rotación
+# Formato: protocolo://usuario:contraseña@host:puerto
+# Para proxies sin autenticación: http://host:puerto
+
+# Proxies HTTP públicos (gratuitos)
+# NOTA: Los proxies gratuitos no son 100% confiables. Algunos pueden fallar.
+# El sistema automáticamente probará otros si uno falla.
+
+http://185.162.231.166:80
+http://185.162.234.107:3128
+http://185.162.235.106:8080
+http://45.167.125.5:9999
+http://209.97.138.46:9999
+http://38.159.135.20:8080
+http://185.162.236.218:80
+http://185.162.228.45:3128
+http://185.162.229.86:3128
+http://91.107.253.214:3128
+http://91.107.253.212:3128
+http://194.44.12.137:8080
+http://194.44.8.222:9999
+http://185.162.229.242:3128
+http://45.167.124.54:9999
+http://185.162.229.166:3128
+http://91.107.253.209:3128
+http://91.107.253.213:3128
+
+# SOCKS5 proxies (si tu librería los soporta)
+# socks5://45.167.124.54:1080
+
+# Si quieres agregar más proxies, simplemente agrega líneas abajo en el mismo formato
+# Ejemplo: http://usuario:contraseña@proxy.ejemplo.com:8080
