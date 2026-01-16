@@ -114,11 +114,37 @@ Busca ofertas de trabajo en múltiples plataformas cubanas y las filtra según t
             except:
                 pass
             
-            await searching_msg.edit_text(
-                result_html + metrics_summary,
-                parse_mode=ParseMode.HTML,
-                disable_web_page_preview=True
-            )
+            full_message = result_html + metrics_summary
+            
+            # Telegram tiene un límite de 4096 caracteres por mensaje
+            MAX_MESSAGE_LENGTH = 4000  # Dejamos margen de seguridad
+            
+            if len(full_message) <= MAX_MESSAGE_LENGTH:
+                # El mensaje cabe en un solo envío
+                await searching_msg.edit_text(
+                    full_message,
+                    parse_mode=ParseMode.HTML,
+                    disable_web_page_preview=True
+                )
+            else:
+                # Dividir el mensaje en partes
+                # Primero eliminamos el mensaje de "buscando..."
+                await searching_msg.delete()
+                
+                # Dividir por ofertas individuales para no cortar a mitad de una oferta
+                parts = self._split_message_by_offers(full_message, MAX_MESSAGE_LENGTH)
+                
+                for i, part in enumerate(parts):
+                    if i == 0:
+                        header = f"<b>📋 Ofertas de trabajo ({i+1}/{len(parts)})</b>\n\n"
+                    else:
+                        header = f"<b>📋 Continuación ({i+1}/{len(parts)})</b>\n\n"
+                    
+                    await update.message.reply_text(
+                        header + part,
+                        parse_mode=ParseMode.HTML,
+                        disable_web_page_preview=True
+                    )
             
             logger.info(f"Successfully sent {len(offers)} offers to user {user.id}")
         
@@ -130,6 +156,32 @@ Busca ofertas de trabajo en múltiples plataformas cubanas y las filtra según t
                 error_html,
                 parse_mode=ParseMode.HTML
             )
+    
+    def _split_message_by_offers(self, message: str, max_length: int) -> list:
+        """Divide el mensaje en partes respetando el límite de caracteres."""
+        parts = []
+        current_part = ""
+        
+        # Dividir por doble salto de línea (separador típico entre ofertas)
+        sections = message.split("\n\n")
+        
+        for section in sections:
+            # Si agregar esta sección excede el límite
+            if len(current_part) + len(section) + 2 > max_length:
+                if current_part:
+                    parts.append(current_part.strip())
+                current_part = section
+            else:
+                if current_part:
+                    current_part += "\n\n" + section
+                else:
+                    current_part = section
+        
+        # Agregar la última parte
+        if current_part:
+            parts.append(current_part.strip())
+        
+        return parts if parts else [message[:max_length]]
     
     async def unknown_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.debug(f"User {update.effective_user.id} sent unknown command: {update.message.text}")
